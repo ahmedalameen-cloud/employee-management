@@ -1,10 +1,20 @@
 from flask import Flask, render_template, request, redirect
 import mysql.connector
+import psycopg2
+import os
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
 
 def get_db_connection():
+    database_url = os.environ.get("DATABASE_URL")
+
+    # Render PostgreSQL
+    if database_url:
+        return psycopg2.connect(database_url)
+
+    # Local Docker MySQL
     return mysql.connector.connect(
         host="mysql",
         user="employeeapp",
@@ -13,13 +23,48 @@ def get_db_connection():
     )
 
 
+def init_db():
+    conn = get_db_connection()
+
+    if os.environ.get("DATABASE_URL"):
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(150) NOT NULL,
+                department VARCHAR(100) NOT NULL,
+                salary NUMERIC(12,2) NOT NULL
+            )
+        """)
+    else:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(150) NOT NULL,
+                department VARCHAR(100) NOT NULL,
+                salary DECIMAL(12,2) NOT NULL
+            )
+        """)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
 @app.route("/")
 def home():
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM employees")
+    if os.environ.get("DATABASE_URL"):
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM employees ORDER BY id DESC")
     employees = cursor.fetchall()
 
     cursor.close()
@@ -62,5 +107,32 @@ def add_employee():
     return render_template("add_employee.html")
 
 
+@app.route("/delete/<int:id>", methods=["POST"])
+def delete_employee(id):
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM employees WHERE id = %s",
+        (id,)
+    )
+
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return redirect("/")
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+
+    init_db()
+
+    port = int(os.environ.get("PORT", 5000))
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
