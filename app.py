@@ -1,10 +1,34 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, session
 import mysql.connector
 import psycopg2
 import os
 from psycopg2.extras import RealDictCursor
+from functools import wraps
 
 app = Flask(__name__)
+
+# Secret key for login session
+app.secret_key = os.environ.get(
+    "SECRET_KEY",
+    "employee-management-secret-key"
+)
+
+
+# ==============================
+# LOGIN REQUIRED
+# ==============================
+
+def login_required(f):
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+
+        if "admin_logged_in" not in session:
+            return redirect("/login")
+
+        return f(*args, **kwargs)
+
+    return decorated_function
 
 
 # ==============================
@@ -15,15 +39,11 @@ def get_db_connection():
 
     database_url = os.environ.get("DATABASE_URL")
 
-    # --------------------------------
     # Render PostgreSQL
-    # --------------------------------
     if database_url:
         return psycopg2.connect(database_url)
 
-    # --------------------------------
     # Local Docker MySQL
-    # --------------------------------
     return mysql.connector.connect(
         host="mysql",
         user="employeeapp",
@@ -42,7 +62,6 @@ def init_db():
 
     if os.environ.get("DATABASE_URL"):
 
-        # PostgreSQL
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -57,7 +76,6 @@ def init_db():
 
     else:
 
-        # MySQL
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -87,14 +105,12 @@ def home():
 
     if os.environ.get("DATABASE_URL"):
 
-        # PostgreSQL
         cursor = conn.cursor(
             cursor_factory=RealDictCursor
         )
 
     else:
 
-        # MySQL
         cursor = conn.cursor(
             dictionary=True
         )
@@ -115,10 +131,62 @@ def home():
 
 
 # ==============================
+# LOGIN
+# ==============================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form["username"]
+        password = request.form["password"]
+
+        admin_username = os.environ.get(
+            "ADMIN_USERNAME",
+            "admin"
+        )
+
+        admin_password = os.environ.get(
+            "ADMIN_PASSWORD",
+            "Admin@123"
+        )
+
+        if (
+            username == admin_username
+            and password == admin_password
+        ):
+
+            session["admin_logged_in"] = True
+
+            return redirect("/")
+
+        return render_template(
+            "login.html",
+            error="Invalid username or password"
+        )
+
+    return render_template("login.html")
+
+
+# ==============================
+# LOGOUT
+# ==============================
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
+
+    return redirect("/")
+
+
+# ==============================
 # ADD EMPLOYEE
 # ==============================
 
 @app.route("/add", methods=["GET", "POST"])
+@login_required
 def add_employee():
 
     if request.method == "POST":
@@ -165,6 +233,7 @@ def add_employee():
 # ==============================
 
 @app.route("/delete/<int:id>", methods=["POST"])
+@login_required
 def delete_employee(id):
 
     conn = get_db_connection()
