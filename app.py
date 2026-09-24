@@ -7,14 +7,23 @@ from psycopg2.extras import RealDictCursor
 app = Flask(__name__)
 
 
+# ==============================
+# DATABASE CONNECTION
+# ==============================
+
 def get_db_connection():
+
     database_url = os.environ.get("DATABASE_URL")
 
+    # --------------------------------
     # Render PostgreSQL
+    # --------------------------------
     if database_url:
         return psycopg2.connect(database_url)
 
+    # --------------------------------
     # Local Docker MySQL
+    # --------------------------------
     return mysql.connector.connect(
         host="mysql",
         user="employeeapp",
@@ -23,11 +32,19 @@ def get_db_connection():
     )
 
 
+# ==============================
+# CREATE DATABASE TABLE
+# ==============================
+
 def init_db():
+
     conn = get_db_connection()
 
     if os.environ.get("DATABASE_URL"):
+
+        # PostgreSQL
         cursor = conn.cursor()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS employees (
                 id SERIAL PRIMARY KEY,
@@ -37,8 +54,12 @@ def init_db():
                 salary NUMERIC(12,2) NOT NULL
             )
         """)
+
     else:
+
+        # MySQL
         cursor = conn.cursor()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS employees (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -50,9 +71,14 @@ def init_db():
         """)
 
     conn.commit()
+
     cursor.close()
     conn.close()
 
+
+# ==============================
+# HOME PAGE
+# ==============================
 
 @app.route("/")
 def home():
@@ -60,18 +86,37 @@ def home():
     conn = get_db_connection()
 
     if os.environ.get("DATABASE_URL"):
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-    else:
-        cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM employees ORDER BY id DESC")
+        # PostgreSQL
+        cursor = conn.cursor(
+            cursor_factory=RealDictCursor
+        )
+
+    else:
+
+        # MySQL
+        cursor = conn.cursor(
+            dictionary=True
+        )
+
+    cursor.execute(
+        "SELECT * FROM employees ORDER BY id DESC"
+    )
+
     employees = cursor.fetchall()
 
     cursor.close()
     conn.close()
 
-    return render_template("index.html", employees=employees)
+    return render_template(
+        "index.html",
+        employees=employees
+    )
 
+
+# ==============================
+# ADD EMPLOYEE
+# ==============================
 
 @app.route("/add", methods=["GET", "POST"])
 def add_employee():
@@ -84,17 +129,23 @@ def add_employee():
         salary = request.form["salary"]
 
         conn = get_db_connection()
+
         cursor = conn.cursor()
 
         query = """
-        INSERT INTO employees
-        (name, email, department, salary)
-        VALUES (%s, %s, %s, %s)
+            INSERT INTO employees
+            (name, email, department, salary)
+            VALUES (%s, %s, %s, %s)
         """
 
         cursor.execute(
             query,
-            (name, email, department, salary)
+            (
+                name,
+                email,
+                department,
+                salary
+            )
         )
 
         conn.commit()
@@ -104,13 +155,20 @@ def add_employee():
 
         return redirect("/")
 
-    return render_template("add_employee.html")
+    return render_template(
+        "add_employee.html"
+    )
 
+
+# ==============================
+# DELETE EMPLOYEE
+# ==============================
 
 @app.route("/delete/<int:id>", methods=["POST"])
 def delete_employee(id):
 
     conn = get_db_connection()
+
     cursor = conn.cursor()
 
     cursor.execute(
@@ -126,11 +184,20 @@ def delete_employee(id):
     return redirect("/")
 
 
+# ==============================
+# START APPLICATION
+# ==============================
+
 if __name__ == "__main__":
 
     init_db()
 
-    port = int(os.environ.get("PORT", 5000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
 
     app.run(
         host="0.0.0.0",
